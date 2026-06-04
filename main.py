@@ -1,5 +1,5 @@
 import tkinter as tk
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk, ImageDraw
 import pygame
 import os
 
@@ -10,6 +10,16 @@ print("Button exists:", os.path.exists("Sprites/StartButton.png"))
 pygame.mixer.init()
 pygame.mixer.music.load("Song/LSO.mp3")
 pygame.mixer.music.play(-1)
+
+class Planet:
+    def __init__(self, x, y, vx, vy, mass, sprite):
+        self.x = x
+        self.y = y
+        self.vx = vx
+        self.vy = vy
+        self.mass = mass
+        self.sprite = sprite
+        self.id = None
 
 class CelestialCandbox:
     def __init__(self, root):
@@ -37,73 +47,116 @@ class CelestialCandbox:
 
         self.start_button.place(anchor="center")
 
-        self.update_graphics()
-
+        self.root.after(50, self.update_menu)
         self.root.bind("<Configure>", self.on_resize)
 
-    def on_resize(self, event=None):
-        self.update_graphics()
+        self.drag_start = None
 
-    def update_graphics(self):
+        self.root.bind("<Button-1>", self.mouse_down)
+        self.root.bind("<ButtonRelease-1>", self.mouse_up)
+
+    def mouse_down(self, event):
+        if not hasattr(self, "canvas"):
+            return
+        self.drag_start = (event.x, event.y)
+
+    def mouse_up(self, event):
+        if not hasattr(self, "canvas") or self.drag_start is None:
+            return
+        
+        x0, y0 = self.drag_start
+        x1, y1 = event.x, event.y
+
+        vx = (x1 - x0) * 0.05
+        vy = (y1 - y0) * 0.05
+
+        self.spawn_planet(x0, y0, vx, vy)
+
+        self.drag_start = None
+
+    def on_resize(self, event=None):
+        if hasattr(self, "canvas"):
+            return
+        else:
+            self.update_menu
+
+    def update_menu(self):
         width = max(self.root.winfo_width(), 1)
         height = max(self.root.winfo_height(), 1)
 
-        bg = self.original_bg.resize(
-            (width, height),
-            Image.Resampling.LANCZOS
-        )
+        bg = self.original_bg.resize((width, height), Image.Resampling.LANCZOS)
+        self.bg_img = ImageTk.PhotoImage(bg)
+        self.bg_label.config(image=self.bg_img)
 
-        self.bg_photo = ImageTk.PhotoImage(bg)
-        self.bg_label.config(image=self.bg_photo)
+        bw = max(150, width // 6)
+        aspect = self.original_button.height / self.original_button.width
+        bh = int(bw * aspect)
 
-        button_width = max(150, width // 6)
+        btn = self.original_button.resize((bw, bh), Image.Resampling.LANCZOS)
+        self.btn_img = ImageTk.PhotoImage(btn)
+        self.start_button.config(image=self.btn_img)
 
-        aspect_ratio = (
-            self.original_button.height /
-            self.original_button.width
-        )
-
-        button_height = int(button_width * aspect_ratio)
-
-        resized_button = self.original_button.resize(
-            (button_width, button_height),
-            Image.Resampling.LANCZOS
-        )
-
-        self.button_photo = ImageTk.PhotoImage(resized_button)
-
-        self.start_button.config(image=self.button_photo)
-
-        x = width * 0.75
-        y = height * 0.75
-
-        self.start_button.place(
-            x=x,
-            y=y,
-            anchor="center"
-        )
+        self.start_button.place(x=width * 0.75, y=height * 0.75, anchor="center")
 
     def start_game(self):
-        pygame.mixer.music.stop()
         pygame.mixer.music.load("Song/lil jingle.mp3")
         pygame.mixer.music.play(-1)
 
         self.start_button.destroy()
         self.bg_label.destroy()
 
-        red_screen = tk.Frame(
-            self.root,
-            bg="red"
+        self.canvas = tk.Canvas(self.root, bg="black", highlightthickness=0)
+        self.canvas.place(relwidth=1, relheight=1)
+
+        self.canvas.bind("<Button-1>", self.mouse_down)
+        self.canvas.bind("<ButtonRelease-1>", self.mouse_up)
+
+        print(self.canvas)
+
+        self.objects = []
+        self.running = True
+
+        self.update_simulation()
+
+    def spawn_planet(self, x, y, vx, vy):
+        img = Image.new("RGBA", (240, 240), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+
+        draw.ellipse(
+            (0, 0, 240, 240),
+            fill=(180, 200, 255, 255)
         )
 
-        red_screen.place(
-            relx=0,
-            rely=0,
-            relwidth=1,
-            relheight=1
-        )
+        img = img.resize((60, 60), Image.Resampling.LANCZOS)
+
+        planet_img = ImageTk.PhotoImage(img)
+
+        if not hasattr(self, "planet_images"):
+            self.planet_images = []
+        self.planet_images.append(planet_img)
+
+        p = Planet(x, y, vx, vy, 10, planet_img)
+
+        p.sprite = planet_img
+
+        p.id = self.canvas.create_image(p.x, p.y, image=p.sprite)
+        self.objects.append(p)
+
+        print("Spawn:", x, y, vx, vy)
+
+    def update_simulation(self):
+        if not self.running:
+            return
+        
+        for obj in self.objects:
+            obj.x += obj.vx
+            obj.y += obj.vy
+
+            self.canvas.coords(obj.id, obj.x, obj.y)
+
+        self.root.after(16, self.update_simulation)
 
 if __name__ == "__main__":
     root = tk.Tk()
     game = CelestialCandbox(root)
-    root.mainloop
+    root.mainloop()
